@@ -1,0 +1,154 @@
+
+/* 
+Name: Ananya Iyer
+Date: Nov. 19, 2019
+File Name: Project 3.java
+This program uses three classes to simulate the spread of a contagious disease 
+and demonstrates the fraction of the population that should be protected for Herd
+Immunity to arise. 
+
+*/
+
+
+//javac --class-path doodlepad.jar Person.java Herd.java Project3.java
+//java --class-path .:doodlepad.jar Project3
+import java.util.Scanner;
+import doodlepad.*;
+public class Project3 {
+ public static void main(String[] args) {
+ // Create and initialize all objects
+ double prob = 0.0;
+ Scanner scan = new Scanner(System.in);
+ Herd herd = new Herd(2500, 25);
+ // Continue looping until a negative number is entered.
+ // Reset and run simulation on each new value entered.
+ while(true) {
+ System.out.print("Enter probability of immunity: ");
+ prob = Double.parseDouble(scan.nextLine());
+ if (prob < 0.0) { break; }
+ herd.reset(prob);
+ System.out.print("Hit Enter to simulate: ");
+ scan.nextLine();
+ herd.simulate();
+ }
+ // Close the Scanner and the Pad window
+ scan.close();
+ Pad.getPad().close();
+ }
+}
+
+
+//javac --class-path doodlepad.jar Person.java Herd.java Project3.java
+//java --class-path .:doodlepad.jar Project3
+import doodlepad.*;
+
+public class Person{
+    private int status;
+    private Oval oval;
+    protected double x;
+    protected double y;
+
+    public Person(double x, double y){ //construct new person obj
+        this.status = 0; //start off as susceptible 
+        this.oval = new Oval (x,y,10,10);
+        this.x = x;
+        this.y = y;
+    }
+
+    public void reset(){ //reset status of person
+        this.status = 0;
+        oval.setFillColor(255,255,255);
+    }
+
+    public void immunize(){ //immunize person
+        this.status = 2;
+        oval.setFillColor(0,255,0);
+    }
+
+    public void infect(){ //infect person
+        this.status=1;
+        oval.setFillColor(255,0,0);
+    }
+
+    public boolean isSusceptible(){ //true if person is susceptible 
+        if (status == 0){
+            return true;
+        }
+        return false; //(always need to return something in a method)
+    }
+
+    public double distance(Person other){ //distance person & other person
+        return Math.sqrt(Math.pow(this.x-other.x,2) + Math.pow(this.y-other.y,2)); //distance formula
+
+    }
+}
+
+//javac --class-path doodlepad.jar Person.java Herd.java Project3.java
+//java --class-path .:doodlepad.jar Project3
+import java.util.ArrayList;
+import java.util.Random;
+
+public class Herd{
+
+    private final Person people[];
+    private final int npeople;
+    private final int cutoff;
+    private ArrayList<Person> infected = new ArrayList<>();
+    private final Person zero; // patient0
+    private final Random rnd;
+
+    // Construct a new Herd object containing npeople Person objects with
+    // disease transmission occurring when people are within cutoff distance.
+    public Herd(final int npeople, final int cutoff) {
+        this.people = new Person[npeople];
+        this.npeople = npeople;
+        this.cutoff = cutoff; // cutoff = distance b/w 2 Person objects for disease transmission to occur
+        this.infected = new ArrayList<Person>();
+        this.rnd = new Random();
+
+        for (int j = 1; j < this.people.length; j++) { // loop through people array to add each person
+            final double a = rnd.nextDouble() * 600;
+            final double b = rnd.nextDouble() * 600;
+            people[j] = (new Person(a, b)); // randomly add new person
+
+        }
+
+        this.zero = new Person(300, 300); // patient 0 @ middle
+        this.people[0] = this.zero;
+
+    }
+
+    public void reset(final double prob) {
+        for (int i = 0; i < this.people.length; i++) {
+            people[i].reset(); // reference that specific person to reset
+
+            if (rnd.nextDouble() < prob) { // immunize Persons with probability prob
+                people[i].immunize();
+            }
+        }
+
+        infected.clear(); // clear method
+
+        zero.infect(); // reinfect person 0
+
+        infected.add(zero); // add person 0 back to infected
+
+    }
+
+    public void simulate() { // run simulation
+
+        while (infected.size() > 0) {
+            for (int i = 0; i < people.length; i++) {
+            Person p1 = infected.get(0); 
+            if (p1.distance(people[i]) < cutoff && people[i].isSusceptible()){
+                people[i].infect();
+                infected.add(people[i]);
+            }
+        }
+
+    }
+
+
+
+}
+}
