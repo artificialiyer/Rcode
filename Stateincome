@@ -1,0 +1,197 @@
+//compile: javac -cp doodlepad.jar BarCharta.java Project4.java InfoGraphic.java State.java
+
+//run: java -cp .:doodlepad.jar Project4
+
+
+/*This program creates a barchart graphic reflecting the income data.
+
+
+/*Name: Ananya Iyer
+Date: December 5, 2019
+File Name: BarCharta.java. Note: had to override existing BarChart file that was experiencing error so had to rename as BarCharta*/
+
+
+import java.io.File;
+
+import java.io.*;
+import doodlepad.*;
+import java.util.ArrayList;
+
+public class BarCharta {
+    private ArrayList<Text> text;
+    private ArrayList<Rectangle> rectangle; 
+    private Text statename =  new Text("",575, 75, 23); // state name initialized to blank
+
+    public BarCharta(String[] labels){ //constructor
+        text = new ArrayList<>(); //instance var arraylists to hold refs
+        rectangle = new ArrayList<>();
+        for (int i = 0; i < labels.length; i++) {  //loop through and increment with new rectange & text each time
+            
+            Text txt = new Text("", 575, 100 + (i*25), 20); //shift down as each added
+            txt.setText(labels[i]);
+            text.add(txt);
+            Rectangle rect = new Rectangle (800, 100 + (i*25), 0, 15); 
+            rectangle.add(rect);
+        }
+        statename.setText(""); 
+    }
+
+   
+    public void update(final String name, final double[] data) { // double array to modify state name 
+        statename.setText(name); //change name of state
+
+         int green = 255;
+
+
+            for (int i = 0; i < rectangle.size(); i++){
+                rectangle.get(i).setWidth(15*data[i]);
+                rectangle.get(i).setFillColor(0, green-10, 0); //change shade based on income
+
+            }
+
+        }
+
+        public void clear(){ //reset Text to empty String & width bar to 0
+
+            statename.setText(""); //clear
+
+            for (int i = 0; i < rectangle.size(); i++){
+
+                rectangle.get(i).setWidth(0);
+            }
+           
+
+        } 
+
+    }
+    
+//compile: javac -cp doodlepad.jar BarCharta.java Project4.java InfoGraphic.java State.java
+
+//run: java -cp .:doodlepad.jar Project4
+
+
+/*This program encapsulates data of each state*/
+
+/*Name: Ananya Iyer
+Date: December 5, 2019
+File Name: Project4.java*/
+
+
+
+import doodlepad.*;
+import java.io.FileReader;
+import java.io.*;
+
+public class State extends Path { //initialize instance vars
+    private String name;
+    private double[] bardata;
+    private BarCharta bchart;
+
+    public State( String name, String path, double[] bardata, BarCharta bchart ){ //path = path to file read/parsed 
+        super();
+        this.name=name;
+        this.bardata=bardata;
+        this.bchart=bchart;
+//read file
+        try(BufferedReader br = new BufferedReader(new FileReader(path))){ 
+            String line = br.readLine();
+            String[] xy = line.split("\t");
+            double x = Double.parseDouble( xy[0] );
+            double y = Double.parseDouble( xy[1] );
+
+            moveTo(x, y);
+
+            while(true){
+                line = br.readLine();
+                if (line == null) { break; } 
+
+                xy = line.split("\t"); //separated by tab
+                x = Double.parseDouble( xy[0] );
+                y = Double.parseDouble( xy[1] );
+                
+                lineTo(x, y);
+            }
+            closePath(); //exceptions:
+       } catch(FileNotFoundException ex){  
+           System.out.println( "Filewasnotfound:" + path);
+       } catch(IOException ex){
+           System.out.println(ex);
+       }       
+    }//event handler methods
+    public void onMouseEntered( double x, double y, int button ){ //pass info to BarChart to update display & data
+        bchart.update(name, bardata);
+        setFillColor(0, 0, 255);
+    }
+    public void onMouseExited( double x, double y, int button ){
+        setFillColor(255, 255, 255);
+    }
+    
+}
+//compile: javac -cp doodlepad.jar BarCharta.java Project4.java InfoGraphic.java State.java
+
+//run: java -cp .:doodlepad.jar Project4
+
+
+/*This program creates the object that builds & composes other objects in the project*/
+
+/*Name: Ananya Iyer
+Date: December 5, 2019
+File Name: Project4.java*/
+
+
+//Import scanner to look through the file
+import java.util.Scanner;
+import java.io.*;
+import java.io.FileNotFoundException;
+import java.util.ArrayList;
+import doodlepad.*;
+
+public class InfoGraphic extends Pad{
+    private BarCharta bchart;
+    public InfoGraphic( String path ){
+        super("Project4", 1000, 800);
+
+        ArrayList<State> states = new ArrayList<State>();
+    //Use a try and catch to read through the lines of the file
+try (Scanner scan = new Scanner(new File(path))){
+                String line = scan.nextLine();
+                String [] s = line.split("\t"); //split w tab
+                String [] labels = new String[16];
+                for(int i=0; i<s.length-1; i++){
+                    labels[i] = s[i+1];
+                }
+
+            bchart = new BarCharta(labels);
+
+            while (scan.hasNext()) {
+                String line1 = scan.nextLine();
+                String [] items = line1.split("\t");
+                String path1 = new String("data/" + items[0] + ".txt");
+                
+                double[] numbers = new double[16]; //convert to doubles & store in array
+                for(int i=1; i<items.length; i++){
+                    numbers[i-1] = Double.parseDouble(items[i]);
+                }
+
+                State ss = new State(items[0], path1, numbers, bchart); //after parsing create new state object
+                states.add(ss);
+            }
+} catch (IOException ex){
+    //System.out.println(");
+    ex.printStackTrace();
+}
+    }
+public void onMouseEntered(double x, double y, int bt){ //current behavior when mouse hovering by overriding 
+    if (bchart == null){   
+    }
+    else{
+        bchart.clear();
+    }
+}
+
+}
+public class Project4 {
+    public static void main(String[] args){
+        InfoGraphic America = new InfoGraphic("data/B19001.txt");
+    }
+}
