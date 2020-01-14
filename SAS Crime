@@ -1,0 +1,90 @@
+proc import datafile = '/folders/myfolders/CrimeSet9.xlsx'
+dbms = xlsx out = crimesetobs;
+run;
+
+proc print data = crimeset9;
+run;
+
+/*check for corrs*/
+proc corr data = crimesetobs
+	plots(maxpoints = none) = matrix (nvar = all histogram);
+	run;
+	
+
+/*full dataset, check for MCL*/ 
+proc reg data = crimsetobs;
+model ViolentCrimesPerPop = population -- PctUsePubTrans / VIF selection = stepwise;
+run;
+
+
+/*full dataset, check for MCL*/ 
+proc reg data = crimesetobs;
+model ViolentCrimesPerPop = population -- PctUsePubTrans / VIF selection = forward best = 10;
+run;
+
+
+/*lasso regression*/
+proc glmselect data = crimesetobs plots=all;
+model ViolentCrimesPerPop = population -- PctUsePubTrans
+/selection=lasso(adaptive); 
+run;
+
+/*1st order model*/
+proc reg data = crimesetobs;
+model ViolentCrimesPerPop = pctwinvinc pctkids2par pctilleg  
+pctUrban pctWSocSec pctEmploy PctNotSpeakEnglWell PctPersDenseHous NumStreet /VIF partial; 
+run;
+
+/*interactions*/
+
+data crimeinteract;
+set crimesetobs;
+inckids = pctwinvinc*pctkids2par; /*from residuals - removed bc high p*/
+illegurban = pctUrban*pctilleg;
+engdense = PctNotSpeakEnglWell*PctPersDenseHous;
+socemploy = pctWSocSec*pctEmploy;
+run;
+
+
+proc reg data = crimeinteract;
+model ViolentCrimesPerPop = 
+pctwinvinc pctkids2par pctilleg pctUrban pctWSocSec pctEmploy PctNotSpeakEnglWell PctPersDenseHous NumStreet 
+inckids illegurban engdense socemploy;
+run;
+
+/*higher orders:*/
+data crimehigh;
+set crimeinteract;
+PctPersDenseHous2 = PctPersDenseHous*PctPersDenseHous; /*removed bc high p*/
+PctNotSpeakEnglWell2 = PctNotSpeakEnglWell*PctNotSpeakEnglWell;
+numstreet3 = NumStreet*NumStreet*NumStreet;
+pctkids2par2 = pctkids2par*pctkids2par;
+pctilleg2 = pctilleg*pctilleg;
+pctinvinc2 = pctwinvinc*pctwinvinc;/*removed bc high p*/
+run;
+
+
+proc reg data = crimehigh;
+model ViolentCrimesPerPop = 
+pctwinvinc pctkids2par pctilleg pctUrban pctWSocSec pctEmploy PctNotSpeakEnglWell PctPersDenseHous NumStreet 
+inckids illegurban engdense socemploy
+PctNotSpeakEnglWell2 numstreet3 pctkids2par2 pctilleg2 
+/partial; 
+run;
+
+/*transform*/
+data crimetransform;
+set crimehigh;
+sqrtviolent = sqrt (ViolentCrimesPerPop);
+run;
+
+
+proc reg data = crimetransform;
+model sqrtviolent = 
+pctwinvinc pctkids2par pctilleg pctUrban pctWSocSec pctEmploy PctNotSpeakEnglWell PctPersDenseHous NumStreet 
+inckids illegurban engdense socemploy
+PctPersDenseHous2 PctNotSpeakEnglWell2 numstreet3 pctkids2par2 pctilleg2 pctinvinc2 /clb cli clm; 
+run;
+
+/*start with all possible interaction/higher order, widdle it down one by one to see if anything*/
+/*ra2 of 1 = overfitting so dont want to overfit it for validation dataset - want to generalize it so it has utility for other models*/
