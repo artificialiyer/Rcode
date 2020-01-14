@@ -1,0 +1,364 @@
+library(haven)
+library(tidyverse)
+library(tidyr)
+library(dplyr)
+library(plyr)
+
+
+
+
+#from adrand data file:
+
+####PREPARING ADRAND DATA####
+
+#to read/import SAS file stored in path
+adrand <- read_sas("~/My SAS Files/9.4/adrand.sas7bdat", NULL) 
+
+
+
+#frequency table: SAS - proc freq
+groupcount <- ftable(adrand$TRTAG2N)
+
+
+#converting from table to dataframe  
+groupdata <- as.data.frame(groupcount)
+
+#find percent
+groupdata$gpercent = (groupdata$Freq / sum(groupdata$Freq))*100
+
+#spread from long to wide: SAS - proc transpose 
+spreadgroupcount <- spread(groupdata, Var1, Freq, fill = 0) #n being spread by TRTAG2N - treatments = columns
+
+#filtering to "Y" & 5 key variables: SAS - keep
+filteredadrand <- filter(adrand) #(without SAFFL)
+popr <- select(filteredadrand, USUBJID, SAFFL, TRTAG2N, TRTAG2, FUDURAG2)
+
+
+#transpose, fill NA with 0 : SAS - proc transpose 
+#used reshape rather than dplyr bto automatically remove duplicates
+library("reshape2")
+dtrans <- dcast(popr, USUBJID ~ TRTAG2N, value.var = "FUDURAG2", fill = 0)
+
+#assigning column names
+names(dtrans)[2]<-"Col1"
+names(dtrans)[3]<-"Col2"
+names(dtrans)[4]<-"Col3"
+names(dtrans)[5]<-"Col4"
+
+
+
+#conditionally "padding out" data, adding row if each USUBJID fulfills >1 condition: SAS - set & if, then do 
+combined1 <- data.frame()
+for (i in 1:nrow(dtrans)){ #to process row by row
+  if (dtrans[i,'Col1'] >= 1 | dtrans[i,'Col3'] >= 1){ #"adding the columns" on SAS
+    current <- data.frame(USUBJID = dtrans[i, 'USUBJID'],TRTAG2N = 5,
+                          TRTAG2 = "placebo_combined",
+                          FUDURAG2 = dtrans[i,'Col1'] + dtrans[i,'Col3'])
+    combined1 <- rbind(combined1,current) #inserting new row (like output in SAS)
+  } 
+  if (dtrans[i,'Col2'] >= 1 | dtrans[i,'Col4'] >= 1){
+    current <- data.frame(USUBJID = dtrans[i, 'USUBJID'],TRTAG2N = 6,
+                          TRTAG2 = "ust_combined",
+                          FUDURAG2 = dtrans[i,'Col2'] + dtrans[i,'Col4'])
+    combined1 <- rbind(combined1,current)
+  }
+  if (dtrans[i,'Col2'] >= 1 | dtrans[i,'Col3'] >= 1 | dtrans[i,'Col4'] >= 1){
+    current <- data.frame(USUBJID = dtrans[i, 'USUBJID'],TRTAG2N = 7,
+                          TRTAG2 = "ust_all",
+                          FUDURAG2 = dtrans[i,'Col2'] + dtrans[i,'Col3'] + dtrans[i,'Col4'])
+    combined1 <- rbind(combined1,current)
+  }
+  if (dtrans[i,'Col1'] >= 1 | dtrans[i,'Col2'] >= 1 | dtrans[i,'Col3'] >= 1 | dtrans[i,'Col4'] >= 1){
+    current <- data.frame(USUBJID = dtrans[i, 'USUBJID'],TRTAG2N = 8,
+                          TRTAG2 = "total",
+                          FUDURAG2 = dtrans[i,'Col1'] + dtrans[i,'Col2'] + dtrans[i,'Col3'] + dtrans[i,'Col4'])
+    combined1 <- rbind(combined1,current) 
+  }
+}
+
+#drop SAFFL col so same number of columns before merging
+popr$SAFFL <- NULL 
+
+#UNION popr & combined1: SAS - set 
+duration <- union_all(popr, combined1)
+
+#sort by TRTAGN2 then USUBJID: SAS - by
+dur_sort <- arrange (duration,TRTAG2N,USUBJID)
+
+
+
+####ANALYSIS SET: TREATED sUBJECTS####
+
+
+#SAS - proc freq 
+treatmentcount <- count(dur_sort,vars = c("TRTAG2","TRTAG2N"))
+
+#rename column names
+names(treatmentcount)[1]<-"newtreatchar"
+names(treatmentcount)[2]<-"newtreat"
+names(treatmentcount)[3]<-"freqcount"
+
+
+#remove newtreat column
+treatmentcount <- treatmentcount %>% select(-newtreat)
+
+#spread to bind later on
+treatmentcount <- treatmentcount %>% spread(newtreatchar, freqcount) 
+
+
+#add cols for final rdbind and title
+treatmentcount["AEBODSYS"] <- "Analysis Set: Treated Subjects"
+
+#rearrange columns/treatments 
+treatmentcount <- treatmentcount[c(9,1,2,3,7,8,6,5,4)]
+
+
+
+
+####AVERAGE DURATION####
+
+#SAS - proc sort by TRTAG2N & USUBJID
+dur_sort <- arrange (duration,TRTAG2N,USUBJID)
+
+#SAS - proc means to find average, rounded to 1 decimal 
+#SAS - tables TRTAG2N*TRTAG2 / out = treatmentcount (drop = percent)
+library(plyr)
+averagedur <- ddply(dur_sort, .(TRTAG2N,TRTAG2),summarise, avedur = round(mean(FUDURAG2), digits = 1))
+
+#spread to bind later on, remove TRTAG2N
+averagedur <- averagedur %>% select(-TRTAG2N) %>% spread(TRTAG2, avedur) 
+
+
+#add cols for final rbind and title
+averagedur["AEBODSYS"] <- "Average Duration of Follow-Up (Weeks)"
+
+#rearrange columns/treatments
+averagedur <- averagedur[c(9,1,2,3,7,8,6,5,4)]
+
+
+# #rename cols
+#   rename( = Ustekinumab - Ustekinumab) %>% 
+#   select(Placebo, )
+
+
+
+#ADAE DATAFILE 
+
+#from adae datafile:
+
+####PREPARING ADAE DATAFILE####
+
+#read adae SAS file 
+library(haven)
+adae <- read_sas("~/My SAS Files/9.4/adae.sas7bdat", NULL) #to import from SAS
+
+# set by  TRTEMFL = Y
+library(dplyr)
+filteredadae <- filter(adae, TRTEMFL == "Y") #(excluding SAFFL)
+
+# conditionally pad out data for each derived treatment column for adverse events: SAS - if, then do
+condition1_3 <- filter(filteredadae, TRTAG2N == 1 | TRTAG2N == 3)
+condition1_3$newtreat <- 5
+condition1_3$newtreatchar <- "placebo_combined"
+
+condition2_4 <- filter(filteredadae, TRTAG2N == 2 | TRTAG2N == 4)
+condition2_4$newtreat <- 6
+condition2_4$newtreatchar <- "ust_combined"
+
+condition2_3_4 <- filter(filteredadae, TRTAG2N == 2 | TRTAG2N == 3 | TRTAG2N == 4)
+condition2_3_4$newtreat <- 7
+condition2_3_4$newtreatchar <- "ust_all"
+
+condition1_2_3_4 <- filter(filteredadae, TRTAG2N == 1 | TRTAG2N == 2 | TRTAG2N == 3 | TRTAG2N == 4)
+condition1_2_3_4$newtreat <- 8
+condition1_2_3_4$newtreatchar <- "total"
+
+#rbind each condition to each other
+rbindconditions <- rbind(condition1_3,condition2_4,condition2_3_4,condition1_2_3_4)
+
+
+
+
+####SUBJECTS WITH 1 OR MORE TREATMENT EMERGENT ADVERSE EVENTS####
+
+#create newtreat & newtreatchar: SAS - rename
+filteredadae$newtreat<-filteredadae$TRTAG2N
+filteredadae$newtreatchar<-filteredadae$TRTAG2
+
+#rbind to filtered ae file to show all columns
+finalae <- rbind(rbindconditions,filteredadae)
+
+# sort terms: SAS - proc sort 
+arrangedpreferredterms <- arrange (finalae, USUBJID, newtreat, newtreatchar, AEBODSYS, AEDECOD)
+arrangedsystemorganclass <- arrange (finalae, USUBJID, newtreat, newtreatchar, AEBODSYS)
+arrangedtreatment <- arrange (finalae, USUBJID, newtreat, newtreatchar)
+
+#remove duplicates: SAS - nodupkey 
+uniquepreferredterms <- arrangedpreferredterms %>% distinct(USUBJID, newtreat, newtreatchar, AEBODSYS, AEDECOD) #for preferred term
+uniquesystemorganclass <- arrangedsystemorganclass %>% distinct(USUBJID, newtreat, newtreatchar, AEBODSYS) #for organ class
+uniquepreferredcount <- arrangedtreatment %>% distinct(USUBJID, newtreat, newtreatchar) #for 3rd row of table 
+
+#counts for each part of AE output: SAS - proc freq
+preferredtermcount <-  count(uniquepreferredterms, vars = c("newtreat", "newtreatchar", "AEBODSYS", "AEDECOD"))
+organclasscount <- count(uniquesystemorganclass, vars = c("newtreat","newtreatchar", "AEBODSYS"))
+treatmentemergentaecount <- count(uniquepreferredcount, vars = c("newtreat", "newtreatchar"))
+
+#merge to find percentages 
+mergedtreatments <- merge(treatmentcount,treatmentemergentaecount,by=c("newtreat","newtreatchar"))
+mergedtreatments <- merge(x=treatmentcount,y=treatmentemergentaecount,by.x = c("newtreat"),by.y = c("newtreatchar"),all = TRUE)
+mergedtreatments <- merge(treatmentcount,treatmentemergentaecount,by="newtreat")
+
+#SAS - merge
+joinedtreatment <- treatmentcount %>% 
+  inner_join(treatmentemergentaecount, by = "newtreat", "newtreatchar")
+
+#find percentage
+joinedtreatment$percentage <- (joinedtreatment$freq/joinedtreatment$freqcount)*100
+
+#create new col for percentage
+parta <- joinedtreatment %>% select(newtreatchar.x, freq) 
+colnames(parta)[2] <- 'value'
+partb <- joinedtreatment %>% select(newtreatchar.x, percentage)
+partb <- partb %>% mutate(newtreatchar.x = paste0(newtreatchar.x, '_prctn'))
+colnames(partb)[2] <- 'value'
+
+#spread to be merged
+bind_rows(parta, partb) %>% spread(newtreatchar.x, value)
+
+#delete extra cols
+aesubj <- select(joinedtreatment, -newtreat,-freqcount,-newtreatchar.y)
+
+#concatenate freq (count) and percent: SAS - cats()
+aesubj$combined <-  sprintf('%d (%.1f%%)', aesubj$freq,aesubj$percentage)
+aesubj <- select(aesubj, -freq, -percentage)
+
+#spread to bind later on
+aesubj <- aesubj %>% spread(newtreatchar.x, combined) 
+
+#add col for final rbind & title
+aesubj["AEBODSYS"] <- "Subjects with >=1 treatment emergent adverse events"
+
+#rearrange treatments / cols
+aesubj <- aesubj[c(9,1,2,3,7,8,6,5,4)]
+
+
+
+####SOC & PT TABLE####
+
+
+#To find percents:
+#Preferredtreatmentcount percent
+
+#merge PT & treatment count
+treatsubj_pt <- merge(x = preferredtermcount, y = treatmentcount, by = "newtreat", all.x=TRUE)
+
+#add new col to find denominator for calculating % (analysis set)
+treatsubj_pt["Percent"] <- (treatsubj_pt$freq / treatsubj_pt$freqcount)*100
+
+#organclasscount percent 
+
+#merge SOC & treatment count 
+treatsubj_soc <- merge(x = organclasscount, y = treatmentcount, by = "newtreat", all.x = TRUE)
+
+
+#add new col to find denominator for calculating % (analysis set)
+treatsubj_soc["Percent"] <- (treatsubj_soc$freq / treatsubj_soc$freqcount)*100
+
+
+#add AEDECOD col to SOC to make equal number of col for cbind
+treatsubj_soc["AEDECOD"] <- "ALL"
+
+#arrange SOC in descending order by frequency: SAS - proc sort descending 
+desc_soc <- arrange(treatsubj_soc,desc(freq))
+
+
+#transpose for count (that doesn't include dup)
+spreadcount <- spread(preferredtermcount, newtreat, freq, fill = 0) #freq being spread by newtreat - treatments = columns
+
+#merge analysis set and soc
+organclasssum <- spreadcount %>% select(-AEDECOD) %>% group_by(AEBODSYS, newtreatchar) %>% summarise_all(funs(sum(.))) 
+organclassfinal <- mutate(organclasssum, AEDECOD = "All") 
+
+
+
+#ORDER BY PROMINENCE:
+
+#pt: spread by matching values, remove duplicates
+denom <- treatsubj_pt %>% select(newtreatchar.x, freqcount) %>% 
+  distinct_all() %>% spread(newtreatchar.x, freqcount)
+
+
+#outer sort: SOC 
+ordered_soc <- treatsubj_soc %>% select(-Percent, -freqcount, -newtreatchar.y, -newtreat) %>% 
+  spread(newtreatchar.x, freq) %>% arrange(-ust_all) %>% mutate(row_index = 1:nrow(.))
+#row_index: proxy for AEBODSYS (organ class) so inner sort can be done
+ordered_soc <- ordered_soc %>% mutate_if(is.numeric, function(.) replace(., is.na(.), 0))
+
+#inner sort: pt
+ordered_pt <- treatsubj_pt %>% select(-Percent, -freqcount, -newtreatchar.y, -newtreat) %>% 
+  spread(newtreatchar.x, freq) 
+ordered_pt <- ordered_pt %>% mutate_if(is.numeric, function(.) replace(., is.na(.), 0))
+
+#create sort col for ordering 
+ordered_pt$sort <- ordered_pt$ust_all
+
+#sort by total if no ust (only treatment is placebo)
+#replace ust with total if condition boolean = TRUE
+condition <- ordered_pt$ust == 0 & ordered_pt$`ust - ust` == 0
+ordered_pt$sort[condition] <- ordered_pt$total[condition]
+
+#arrange by descending sort, bind SOC & PT
+ordered_pt <- ordered_pt %>% arrange(-sort) %>% 
+  left_join(ordered_soc %>% select(AEBODSYS, row_index), by='AEBODSYS')
+
+#if value is numeric, replace NA with 0 
+finalorder <- ordered_pt %>% mutate_if(is.numeric, function(.) replace(., is.na(.), 0))
+
+#bind PT & SOC final orders
+finalorder <- bind_rows(ordered_soc, ordered_pt)
+
+#replace NA in SOC with ust_all so ALL shows up at top of each SOC
+finalorder$sort[is.na(finalorder$sort)] <- finalorder$ust_all
+
+#final order: descending sort, ascending row_index, remove extra cols
+finalorder <- finalorder %>% arrange(row_index, -sort) %>% select(-row_index, -sort)
+
+#to find %:
+#denom: row = , & col = treatment, uses treatment as index to right dem value 
+#denom calculated by corresponding treatment 
+#adding percent col
+for (i in colnames(denom)){
+  finalorder[,paste0(i,'_prctn')] <- finalorder[,i]/denom[,i]
+}
+
+
+#concatenate for all values after 2 headers 
+table <- finalorder %>% select(-contains('prctn'))
+for (col in colnames(table)[3:ncol(table)]){
+  current <- sprintf('%d (%.1f%%)', finalorder[,col], 100*finalorder[,paste0(col, '_prctn')]) #sprintf: prints in correct format
+  current[finalorder[,col] == 0] <- '0' #set values to 0
+  table[,col] <- current
+}
+
+
+#remove extra cols
+table <- table %>% select(-row_index.x.x, -row_index.y.y)
+
+#rearrange cols in df
+table <- table[c(1,2,3,4,5,9,10,8,7,6)]
+
+#combine PT & SOC to 1 col so resembles report 
+newtable <- table %>% 
+  mutate(AEBODSYS = ifelse(AEDECOD == "ALL",AEBODSYS,sprintf('%s',AEDECOD))) %>% select(-AEDECOD)
+
+
+
+###FINAL OUTPUT####
+final <- rbind(treatmentcount,averagedur,aesubj,newtable)
+
+
+#write into datatable 
+install.packages('DT')
+library(DT)
+datatable(final)
+
