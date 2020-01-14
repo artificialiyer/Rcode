@@ -1,0 +1,71 @@
+
+
+proc import datafile = '/folders/myfolders/CrimeSet9.xlsx'
+dbms = xlsx out = original_data;
+run;
+
+
+
+data crime2;
+set original_data;
+/*interactions*/
+inckids = pctwinvinc*pctkids2par; /*removed due to high p*/
+illegurban = pctUrban*pctilleg;
+engdense = PctNotSpeakEnglWell*PctPersDenseHous;
+socemploy = pctWSocSec*pctEmploy;
+/*higher orders*/
+PctPersDenseHous2 = PctPersDenseHous*PctPersDenseHous; /*removed due to high p*/
+PctNotSpeakEnglWell2 = PctNotSpeakEnglWell*PctNotSpeakEnglWell;
+numstreet3 = NumStreet*NumStreet*NumStreet;
+pctkids2par2 = pctkids2par*pctkids2par;
+pctilleg2 = pctilleg*pctilleg;
+pctinvinc2 = pctwinvinc*pctwinvinc;/*removed due to high p*/
+/*transform*/
+sqrtviolent = sqrt (ViolentCrimesPerPop);
+run;
+
+
+proc glm data = crime2;
+model sqrtviolent = 
+pctwinvinc pctkids2par pctilleg pctUrban pctWSocSec pctEmploy PctNotSpeakEnglWell PctPersDenseHous NumStreet 
+inckids illegurban engdense socemploy
+PctPersDenseHous2 PctNotSpeakEnglWell2 numstreet3 pctkids2par2 pctilleg2 pctinvinc2 / solution;
+code file='/folders/myfolders/Validation.sas';
+run;
+
+proc import	datafile='/folders/myfolders/CrimeTestSet.xlsx'	
+dbms=xlsx	out=testSet;
+run;
+
+data testScoring;
+set	testSet;
+/*interactions*/
+inckids = pctwinvinc*pctkids2par; /*removed due to high p*/
+illegurban = pctUrban*pctilleg;
+engdense = PctNotSpeakEnglWell*PctPersDenseHous;
+socemploy = pctWSocSec*pctEmploy;
+/*higher orders*/
+PctPersDenseHous2 = PctPersDenseHous*PctPersDenseHous; /*removed due to high p*/
+PctNotSpeakEnglWell2 = PctNotSpeakEnglWell*PctNotSpeakEnglWell;
+numstreet3 = NumStreet*NumStreet*NumStreet;
+pctkids2par2 = pctkids2par*pctkids2par;
+pctilleg2 = pctilleg*pctilleg;
+pctinvinc2 = pctwinvinc*pctwinvinc;/*removed due to high p*/
+/*transform*/
+sqrtviolent = sqrt (ViolentCrimesPerPop);
+%include '/folders/myfolders/Validation.sas';
+run;
+
+proc means data=testScoring mean;
+var	sqrtviolent;
+run;
+
+data stats;
+set	testScoring;
+sqerror	= (sqrtviolent-p_ sqrtviolent)*( sqrtviolent-p_ sqrtviolent);
+sqmean = (sqrtviolent - 0.4384317)*( sqrtviolent - 0.4384317);
+run;
+
+proc means data= stats sum;
+var	sqerror	sqmean;
+run;
